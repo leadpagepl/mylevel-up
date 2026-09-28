@@ -1,0 +1,447 @@
+@import "tailwindcss";
+
+@theme {
+  /* ---- Level Up brand palette ---- */
+  --color-ink: #10243f;
+  --color-ink-deep: #0a1729;
+  --color-ink-soft: #1d3859;
+  --color-ink-line: #2b4467;
+  --color-signal: #c61030;
+  --color-signal-deep: #9d0b26;
+  --color-paper: #f7f8fa;
+  --color-paper-pure: #ffffff;
+  --color-gold: #ecaa38;
+
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-source-serif), Georgia, "Times New Roman", serif;
+
+  --radius-plate: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Base
+ * ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+  --edge: clamp(1.25rem, 5vw, 5.5rem);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-signal);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-signal);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+.on-ink :focus-visible {
+  outline-color: var(--color-gold);
+}
+
+@layer components {
+/* ------------------------------------------------------------------ *
+ *  Type system — Plus Jakarta Sans: nagłówki mocne, ale bez przesadnej
+ *  wagi i szerokości; etykiety czytelne, z umiarkowanym rozstrzeleniem.
+ * ------------------------------------------------------------------ */
+.t-display {
+  font-family: var(--font-sans);
+  font-weight: 760;
+  letter-spacing: -0.032em;
+  line-height: 0.95;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.t-head {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.t-label {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+@media (min-width: 768px) {
+  .t-label {
+    font-size: 0.78rem;
+  }
+}
+
+.t-body {
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+}
+
+.t-quote {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.t-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ------------------------------------------------------------------ *
+ *  Reveal primitives (GSAP drives the inner element)
+ * ------------------------------------------------------------------ */
+/* Maska linii: musi zostawić miejsce na polskie znaki diakrytyczne (Ó, Ć, Ż)
+   przy ciasnej interlinii, inaczej kreski nad literami są obcinane. */
+.mask {
+  display: block;
+  overflow: hidden;
+  padding-top: 0.2em;
+  padding-bottom: 0.12em;
+  margin-top: -0.2em;
+  margin-bottom: -0.12em;
+}
+
+.mask > * {
+  display: block;
+  will-change: transform;
+}
+
+[data-anim] {
+  will-change: transform, opacity;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Brand geometry
+ * ------------------------------------------------------------------ */
+.plate-arch {
+  border-radius: 46% 46% 6px 6px / 34% 34% 6px 6px;
+}
+
+.rule-red {
+  height: 4px;
+  background: var(--color-signal);
+  transform-origin: left center;
+}
+
+.hairline {
+  border-color: color-mix(in srgb, var(--color-ink) 14%, transparent);
+}
+
+.on-ink .hairline {
+  border-color: color-mix(in srgb, #ffffff 16%, transparent);
+}
+
+/* Accordion */
+.acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.acc-panel[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.acc-panel > div {
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Przewijany pasek opinii
+ * ------------------------------------------------------------------ */
+/* Pas jedzie bez przerwy — bez pauzy na hover, focus ani dotyk.
+   Krawędzie wygaszamy nakładkami z gradientem zamiast mask-image:
+   maska na rodzicu animowanej warstwy wymusza w Safari przerysowanie
+   w każdej klatce, gradient jest zwykłą, statyczną warstwą. */
+.marquee {
+  position: relative;
+  overflow: hidden;
+  --marquee-fade: 28px;
+}
+
+.marquee::before,
+.marquee::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: var(--marquee-fade);
+  pointer-events: none;
+}
+
+.marquee::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--color-paper), transparent);
+}
+
+.marquee::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--color-paper), transparent);
+}
+
+@media (min-width: 768px) {
+  .marquee {
+    --marquee-fade: 72px;
+  }
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  backface-visibility: hidden;
+  animation: marquee-left var(--marquee-duration, 60s) linear infinite;
+}
+
+.marquee-track[data-dir="right"] {
+  animation-name: marquee-right;
+}
+
+@keyframes marquee-left {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes marquee-right {
+  from {
+    transform: translate3d(-50%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Hide scrollbar on the mobile goal rail */
+.no-bar {
+  scrollbar-width: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
+}
+}
+
+/* ------------------------------------------------------------------ *
+ *  Intro z logo (raz na kartę) — cała choreografia w CSS
+ *  0.05–0.65s logo (maska + lekki wzrost) · 0.32s krótka czerwona linia
+ *  0.80s linia rozciąga się na całą szerokość · 0.92s logo odpływa
+ *  1.15–1.70s kurtyna rozsuwa się wzdłuż linii · 1.72s nakładka znika
+ * ------------------------------------------------------------------ */
+.intro {
+  --intro-logo-h: 124px;
+  --intro-gap: 26px;
+  --intro-short: 140px;
+  --intro-full-at: 0.8s;
+  --intro-out-at: 0.92s;
+  --intro-curtain-at: 1.15s;
+  --intro-curtain-dur: 0.55s;
+  --intro-end: 1.72s;
+  --intro-seam: calc(50% + var(--intro-logo-h) / 2 + var(--intro-gap));
+  --intro-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --intro-ease-io: cubic-bezier(0.77, 0, 0.175, 1);
+
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  /* sam kontener nie łapie kliknięć — tylko panele, dopóki zasłaniają */
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .intro {
+    --intro-logo-h: 96px;
+    --intro-gap: 20px;
+    --intro-short: 104px;
+    --intro-full-at: 0.74s;
+    --intro-out-at: 0.84s;
+    --intro-curtain-at: 1.05s;
+    --intro-curtain-dur: 0.45s;
+    --intro-end: 1.52s;
+  }
+}
+
+html[data-intro="play"] .intro {
+  display: block;
+  /* chowa się sama — także gdy JS w ogóle nie zadziała */
+  animation: intro-hide 0s linear var(--intro-end) forwards;
+}
+
+.intro-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--color-paper);
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.intro-panel--top {
+  top: 0;
+  height: var(--intro-seam);
+  animation: intro-curtain-up var(--intro-curtain-dur) var(--intro-ease-io)
+    var(--intro-curtain-at) forwards;
+}
+
+.intro-panel--bottom {
+  top: var(--intro-seam);
+  bottom: 0;
+  animation: intro-curtain-down var(--intro-curtain-dur) var(--intro-ease-io)
+    var(--intro-curtain-at) forwards;
+}
+
+.intro-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  opacity: 0;
+  clip-path: inset(0 0 100% 0);
+  animation:
+    intro-logo-in 0.6s var(--intro-ease-out) 0.05s forwards,
+    intro-logo-out 0.28s var(--intro-ease-io) var(--intro-out-at) forwards;
+}
+
+.intro-logo img {
+  display: block;
+  height: var(--intro-logo-h);
+  width: auto;
+}
+
+.intro-line {
+  position: absolute;
+  top: var(--intro-seam);
+  height: 2px;
+  margin-top: -1px;
+  background: var(--color-signal);
+  transform: scaleX(0);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.intro-line--short {
+  left: 50%;
+  width: var(--intro-short);
+  margin-left: calc(var(--intro-short) / -2);
+  animation:
+    intro-grow 0.5s var(--intro-ease-out) 0.32s forwards,
+    intro-fade 0.2s ease var(--intro-curtain-at) forwards;
+}
+
+.intro-line--full {
+  left: 0;
+  right: 0;
+  animation:
+    intro-grow 0.4s var(--intro-ease-io) var(--intro-full-at) forwards,
+    intro-fade 0.2s ease var(--intro-curtain-at) forwards;
+}
+
+@keyframes intro-logo-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: none;
+  }
+}
+
+@keyframes intro-logo-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes intro-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes intro-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes intro-curtain-up {
+  to {
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes intro-curtain-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes intro-hide {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Reduced motion
+ * ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  html[data-intro] .intro {
+    display: none !important;
+  }
+  .marquee {
+    overflow-x: auto;
+  }
+  .marquee::before,
+  .marquee::after {
+    display: none;
+  }
+  .marquee-track {
+    animation: none !important;
+    transform: none !important;
+  }
+  .marquee-track > [data-clone="true"] {
+    display: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
