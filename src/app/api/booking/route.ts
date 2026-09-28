@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 
 /** Zgłoszenie to kilkaset bajtów — większe body odrzucamy przed parsowaniem. */
 const MAX_BODY_BYTES = 16 * 1024;
-const RESEND_TIMEOUT_MS = 8000;
+/** Apps Script bywa wolny przy zimnym starcie — dłużej nie trzymamy użytkownika. */
+const GOOGLE_TIMEOUT_MS = 10_000;
 
 const LIMITS = { name: 120, phone: 30, email: 254, message: 2000 } as const;
 
@@ -51,14 +52,16 @@ const multiline = (v: unknown) =>
         .trim()
     : "";
 
-/** Pole wyboru: przyjmujemy tylko etykiety z formularza, resztę pomijamy. */
-const choice = (v: unknown, options: Option[]) => {
-  const s = line(v);
-  return options.some((o) => o.label.normalize("NFC") === s) ? s : "";
+/**
+ * Pole wyboru: klient wysyła id opcji (stabilne — etykiety zawierają ceny,
+ * które mogą się zmienić), do arkusza trafia aktualna etykieta.
+ * "" = nie wybrano, null = wartość spoza allowlisty.
+ */
+const choice = (v: unknown, options: Option[]): string | null => {
+  const id = line(v);
+  if (!id) return "";
+  return options.find((o) => o.id === id)?.label ?? null;
 };
-
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Czyta body z limitem rozmiaru — Route Handlers nie mają własnego limitu. */
 async function readJson(request: Request): Promise<unknown> {
@@ -90,9 +93,8 @@ async function readJson(request: Request): Promise<unknown> {
 }
 
 /**
- * Lokalna kopia zgłoszenia w .data/ (poza public/, niedostępna z sieci).
- * Na serverless (np. Vercel) katalog projektu jest tylko do odczytu, a /tmp
- * jest ulotny — tam ten zapis nie jest trwały i nie liczy się jako dostarczenie.
+ * Zapis do .data/ (poza public/, niedostępny z sieci) — wyłącznie pomoc przy
+ * pracy lokalnej bez skonfigurowanego Google. W produkcji nie jest używany.
  */
 async function persist(entry: string): Promise<boolean> {
   try {
@@ -108,48 +110,72 @@ async function persist(entry: string): Promise<boolean> {
   }
 }
 
-type EmailResult = "sent" | "failed" | "not-configured";
+type LeadSubmission = {
+  name: string;
+  phone: string;
+  email: string;
+  goal: string;
+  lessonType: string;
+  level: string;
+  time: string;
+  message: string;
+  submittedAt: string;
+};
 
-/** Wysyłka e-mailem przez Resend — aktywna tylko gdy ustawiono zmienne. */
-async function sendEmail(data: Record<string, string>): Promise<EmailResult> {
-  const key = process.env.RESEND_API_KEY;
-  const to = process.env.BOOKING_TO_EMAIL;
-  const from = process.env.BOOKING_FROM_EMAIL;
-  if (!key || !to || !from) return "not-configured";
+type GoogleResult = "saved" | "failed" | "not-configured";
 
-  // Dane z formularza escapujemy — inaczej można by wstrzyknąć do maila
-  // szkoły własne linki, obrazki czy formularze.
-  const rows = Object.entries(data)
-    .filter(([, v]) => v)
-    .map(
-      ([k, v]) =>
-        `<tr><td><strong>${k}</strong></td><td>${escapeHtml(v).replace(/\n/g, "<br>")}</td></tr>`,
-    )
-    .join("");
+/**
+ * Zapis leada w Google Sheets przez Apps Script Web App.
+ * Sukces tylko gdy HTTP jest OK i odpowiedź to JSON z `ok: true` — Apps Script
+ * potrafi zwrócić 200 ze stroną błędu w HTML. URL, sekret i treść odpowiedzi
+ * Google nie trafiają ani do logów, ani do klienta.
+ */
+async function saveLeadToGoogle(lead: LeadSubmission): Promise<GoogleResult> {
+  const url = process.env.GOOGLE_LEADS_WEBHOOK_URL;
+  const secret = process.env.GOOGLE_LEADS_WEBHOOK_SECRET;
+  if (!url || !secret) {
+    console.error(
+      "[booking] brak GOOGLE_LEADS_WEBHOOK_URL lub GOOGLE_LEADS_WEBHOOK_SECRET",
+    );
+    return "not-configured";
+  }
+  // Sekret leci w body — nie wysyłamy go nieszyfrowanym połączeniem.
+  if (!url.startsWith("https://")) {
+    console.error("[booking] adres Apps Script musi zaczynać się od https://");
+    return "not-configured";
+  }
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        reply_to: data.email || undefined,
-        subject: `Nowe zgłoszenie ze strony — ${data.imie || "bez imienia"}`,
-        html: `<h2>Nowe zgłoszenie na lekcję</h2><table cellpadding="6">${rows}</table>`,
-      }),
-      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, lead }),
+      // Apps Script odpowiada przekierowaniem 302 do strony z wynikiem.
+      redirect: "follow",
+      signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
     });
-    if (res.ok) return "sent";
-    // Tylko status — treść odpowiedzi Resend nie trafia do logów ani do klienta.
-    console.error(`[booking] Resend odrzucił wysyłkę (HTTP ${res.status})`);
-    return "failed";
+    if (!res.ok) {
+      console.error(`[booking] Apps Script odrzucił zapis (HTTP ${res.status})`);
+      return "failed";
+    }
+
+    let result: unknown;
+    try {
+      result = await res.json();
+    } catch (err) {
+      // Timeout w trakcie czytania body też tu trafia.
+      const name = err instanceof Error ? err.name : "błąd";
+      console.error(`[booking] Apps Script zwrócił niepoprawny JSON (${name})`);
+      return "failed";
+    }
+    if ((result as { ok?: unknown } | null)?.ok !== true) {
+      console.error("[booking] Apps Script nie potwierdził zapisu (ok !== true)");
+      return "failed";
+    }
+    return "saved";
   } catch (err) {
     console.error(
-      `[booking] brak odpowiedzi z Resend (${err instanceof Error ? err.name : "błąd"})`,
+      `[booking] brak odpowiedzi z Apps Script (${err instanceof Error ? err.name : "błąd"})`,
     );
     return "failed";
   }
@@ -182,32 +208,45 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const data = {
-    imie: line(input.name),
-    telefon: line(input.phone),
+  const goal = choice(input.goal, GOALS);
+  const lessonType = choice(input.lessonType, LESSON_TYPES);
+  const level = choice(input.level, LEVELS);
+  const time = choice(input.time, TIMES);
+
+  const lead: LeadSubmission = {
+    name: line(input.name),
+    phone: line(input.phone),
     email: line(input.email),
-    cel: choice(input.goal, GOALS),
-    rodzajZajec: choice(input.lessonType, LESSON_TYPES),
-    poziom: choice(input.level, LEVELS),
-    poraDnia: choice(input.time, TIMES),
-    wiadomosc: multiline(input.message),
+    goal: goal ?? "",
+    lessonType: lessonType ?? "",
+    level: level ?? "",
+    time: time ?? "",
+    message: multiline(input.message),
+    // Data zgłoszenia zawsze z serwera — nie z danych od klienta.
+    submittedAt: new Date().toISOString(),
   };
 
   const errors: Record<string, string> = {};
-  if (data.imie.length < 2) errors.name = "Podaj imię.";
-  else if (data.imie.length > LIMITS.name)
+  // goal i lessonType są wymagane; level i time opcjonalne, ale jeśli
+  // przyszły, muszą być z allowlisty.
+  if (!goal) errors.goal = "Wybierz, czego chcesz się uczyć.";
+  if (!lessonType) errors.lessonType = "Wybierz rodzaj zajęć.";
+  if (level === null) errors.level = "Wybierz poziom z listy.";
+  if (time === null) errors.time = "Wybierz porę dnia z listy.";
+  if (lead.name.length < 2) errors.name = "Podaj imię.";
+  else if (lead.name.length > LIMITS.name)
     errors.name = `Imię może mieć najwyżej ${LIMITS.name} znaków.`;
-  const digits = data.telefon.replace(/\D/g, "").length;
+  const digits = lead.phone.replace(/\D/g, "").length;
   if (
-    data.telefon.length > LIMITS.phone ||
-    !PHONE_RE.test(data.telefon) ||
+    lead.phone.length > LIMITS.phone ||
+    !PHONE_RE.test(lead.phone) ||
     digits < 9 ||
     digits > 15
   )
     errors.phone = "Podaj numer telefonu.";
-  if (data.email.length > LIMITS.email || !EMAIL_RE.test(data.email))
+  if (lead.email.length > LIMITS.email || !EMAIL_RE.test(lead.email))
     errors.email = "Podaj poprawny adres e-mail.";
-  if (data.wiadomosc.length > LIMITS.message)
+  if (lead.message.length > LIMITS.message)
     errors.message = `Wiadomość może mieć najwyżej ${LIMITS.message} znaków.`;
   if (input.consent !== true) errors.consent = "Potrzebujemy tej zgody.";
 
@@ -215,23 +254,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, errors }, { status: 422 });
   }
 
-  const record = {
-    ...data,
-    data: new Date().toISOString(),
-    zrodlo: "strona www",
-  };
-
-  const saved = await persist(JSON.stringify(record));
-  const email = await sendEmail(data);
-
-  // W produkcji jedynym trwałym kanałem jest e-mail: plik na serverless ginie,
-  // więc sukces pokazujemy dopiero po potwierdzeniu wysyłki przez Resend.
-  // Lokalnie (npm run dev) wystarcza zapis do .data/.
-  const delivered =
-    email === "sent" || (saved && process.env.NODE_ENV !== "production");
+  // Jedynym kanałem dostarczenia jest Google Sheets: sukces tylko po
+  // potwierdzeniu zapisu. Plik .data/ liczy się wyłącznie lokalnie
+  // (npm run dev), gdy Google nie jest skonfigurowany.
+  const google = await saveLeadToGoogle(lead);
+  const saved =
+    google === "not-configured" &&
+    process.env.NODE_ENV !== "production" &&
+    (await persist(JSON.stringify(lead)));
+  const delivered = google === "saved" || saved;
 
   // Logi bez danych osobowych — tylko stan kanałów dostarczenia.
-  const channels = `e-mail: ${email}, plik: ${saved ? "tak" : "nie"}`;
+  const channels = `google: ${google}, plik: ${saved ? "tak" : "nie"}`;
   if (!delivered) {
     console.error(`[booking] zgłoszenie NIE zostało dostarczone (${channels})`);
     return NextResponse.json(

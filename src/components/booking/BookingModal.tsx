@@ -282,16 +282,25 @@ export function BookingModal() {
           message: form.message,
           consent: form.consent,
           website: form.website,
-          goal: labelOf(GOALS, form.goal),
-          lessonType: labelOf(LESSON_TYPES, form.lessonType),
-          level: labelOf(LEVELS, form.level),
-          time: labelOf(TIMES, form.time),
+          goal: form.goal,
+          lessonType: form.lessonType,
+          level: form.level,
+          time: form.time,
         }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data?.errors) {
-          setErrors(data.errors as Record<string, string>);
+          const serverErrors = data.errors as Record<string, string>;
+          setErrors(serverErrors);
+          // Błędy pól wyboru są wyświetlane na kroku 1.
+          if (
+            serverErrors.goal ||
+            serverErrors.lessonType ||
+            serverErrors.level ||
+            serverErrors.time
+          )
+            setStep(1);
           setStatus("idle");
           return;
         }

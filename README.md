@@ -22,16 +22,24 @@ npm run build   # build produkcyjny
 
 ## Formularz zgłoszeniowy
 
-`POST /api/booking` waliduje dane, zapisuje kopię do `.data/zgloszenia.jsonl`
-(jeśli katalog jest zapisywalny) i wysyła zgłoszenie mailem przez Resend.
-Ekran „Dziękujemy za zgłoszenie” pojawia się **wyłącznie** po odpowiedzi 200.
-Przy błędzie użytkownik dostaje numer telefonu i adres e-mail.
+```
+formularz → POST /api/booking (Next.js) → Google Apps Script → Google Sheets
+```
 
-W produkcji odpowiedź 200 oznacza, że Resend przyjął wiadomość — plik nie
-wystarcza, bo na hostingu serverless (np. Vercel) jest ulotny. Dlatego przed
-publikacją trzeba ustawić `RESEND_API_KEY`, `BOOKING_TO_EMAIL`
-i `BOOKING_FROM_EMAIL`; bez nich formularz zwraca błąd. Lokalnie
-(`npm run dev`) wystarcza zapis do pliku.
+`POST /api/booking` waliduje i normalizuje dane, a potem wysyła zgłoszenie
+(po stronie serwera, razem ze wspólnym sekretem) do Google Apps Script Web App,
+który dopisuje wiersz do arkusza. Przeglądarka nie zna adresu Apps Script
+ani sekretu.
+
+Ekran „Dziękujemy za zgłoszenie” pojawia się **wyłącznie** wtedy, gdy Apps
+Script potwierdzi zapis odpowiedzią JSON `{ "ok": true }` — sama odpowiedź
+HTTP 200 nie wystarcza. Przy błędzie, przekroczeniu czasu (10 s) albo braku
+konfiguracji użytkownik dostaje numer telefonu i adres e-mail szkoły.
+
+Przed publikacją trzeba ustawić `GOOGLE_LEADS_WEBHOOK_URL`
+i `GOOGLE_LEADS_WEBHOOK_SECRET` (patrz `.env.example`); bez nich formularz
+w produkcji zwraca błąd. Lokalnie (`npm run dev`) bez tych zmiennych
+zgłoszenia zapisują się do `.data/zgloszenia.jsonl`.
 
 ## Do potwierdzenia przez szkołę przed publikacją
 
