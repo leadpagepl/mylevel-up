@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   TIMES,
   type Option,
 } from "@/components/booking/options";
+import { NOTIFY_SUBJECT, renderLeadEmail } from "./notification-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 16 * 1024;
 /** Apps Script bywa wolny przy zimnym starcie — dłużej nie trzymamy użytkownika. */
 const GOOGLE_TIMEOUT_MS = 10_000;
+const RESEND_TIMEOUT_MS = 6_000;
 
 const LIMITS = { name: 120, phone: 30, email: 254, message: 2000 } as const;
 
@@ -181,6 +183,54 @@ async function saveLeadToGoogle(lead: LeadSubmission): Promise<GoogleResult> {
   }
 }
 
+/**
+ * Opcjonalne powiadomienie e-mail przez Resend — tylko informacja dla szkoły.
+ * Wywoływane wyłącznie po zapisie w Google i nigdy nie zmienia odpowiedzi
+ * formularza. HTML (z escapowanymi danymi) + tekst, temat bez danych użytkownika.
+ */
+async function sendLeadNotification(lead: LeadSubmission): Promise<void> {
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.BOOKING_NOTIFY_EMAIL;
+  const from = process.env.BOOKING_FROM_EMAIL;
+  if (!key || !to || !from) {
+    console.info("[booking] email notification disabled");
+    return;
+  }
+
+  const { text, html } = renderLeadEmail(lead);
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        // E-mail przeszedł walidację (bez <>,;:" itd.) — szkoła może odpisać wprost.
+        reply_to: lead.email,
+        subject: NOTIFY_SUBJECT,
+        html,
+        text,
+      }),
+      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+    });
+    // 2xx = Resend przyjął wiadomość; treść odpowiedzi nie jest potrzebna.
+    if (res.ok) console.info("[booking] email notification sent");
+    else console.error(`[booking] email notification failed (status: ${res.status})`);
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      console.error("[booking] email notification timeout");
+    } else {
+      console.error(
+        `[booking] email notification failed (${err instanceof Error ? err.name : "error"})`,
+      );
+    }
+  }
+}
+
 const invalid = (status: number) =>
   NextResponse.json({ ok: false, error: "Nieprawidłowe dane." }, { status });
 
@@ -254,9 +304,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, errors }, { status: 422 });
   }
 
-  // Jedynym kanałem dostarczenia jest Google Sheets: sukces tylko po
-  // potwierdzeniu zapisu. Plik .data/ liczy się wyłącznie lokalnie
-  // (npm run dev), gdy Google nie jest skonfigurowany.
+  // Google Sheets jest źródłem prawdy: sukces tylko po potwierdzeniu zapisu.
+  // Plik .data/ liczy się wyłącznie lokalnie (npm run dev), gdy Google nie
+  // jest skonfigurowany.
   const google = await saveLeadToGoogle(lead);
   const saved =
     google === "not-configured" &&
@@ -275,5 +325,8 @@ export async function POST(request: Request) {
   }
 
   console.info(`[booking] zgłoszenie przyjęte (${channels})`);
+  // Powiadomienie dopiero po zapisie w Google i już po wysłaniu odpowiedzi —
+  // jego wynik (także timeout) nie opóźnia ani nie zmienia sukcesu formularza.
+  if (google === "saved") after(() => sendLeadNotification(lead));
   return NextResponse.json({ ok: true });
 }

@@ -24,6 +24,7 @@ npm run build   # build produkcyjny
 
 ```
 formularz → POST /api/booking (Next.js) → Google Apps Script → Google Sheets
+                                                        └→ (opcjonalnie) e-mail przez Resend
 ```
 
 `POST /api/booking` waliduje i normalizuje dane, a potem wysyła zgłoszenie
@@ -40,6 +41,14 @@ Przed publikacją trzeba ustawić `GOOGLE_LEADS_WEBHOOK_URL`
 i `GOOGLE_LEADS_WEBHOOK_SECRET` (patrz `.env.example`); bez nich formularz
 w produkcji zwraca błąd. Lokalnie (`npm run dev`) bez tych zmiennych
 zgłoszenia zapisują się do `.data/zgloszenia.jsonl`.
+
+**Powiadomienie e-mail (Resend) jest opcjonalne.** Wysyłamy je dopiero po
+potwierdzonym zapisie w Google Sheets, już po odpowiedzi dla użytkownika.
+Google Sheets pozostaje jedynym źródłem prawdy: awaria, timeout (6 s) albo
+brak konfiguracji Resend nie powoduje utraty zgłoszenia i nie zmienia ekranu
+sukcesu. Mail ma wersję HTML w stylistyce strony (wszystkie dane z formularza
+są escapowane) oraz wersję tekstową. Konfiguracja: `RESEND_API_KEY`,
+`BOOKING_NOTIFY_EMAIL`, `BOOKING_FROM_EMAIL` (patrz `.env.example`).
 
 ## Do potwierdzenia przez szkołę przed publikacją
 
