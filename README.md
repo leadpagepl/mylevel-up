@@ -22,15 +22,16 @@ npm run build   # build produkcyjny
 
 ## Formularz zgłoszeniowy
 
-`POST /api/booking` waliduje dane, zapisuje je do `.data/zgloszenia.jsonl`
-i — jeśli ustawiono zmienne z `.env.example` — wysyła je mailem przez Resend.
-Ekran „Dziękujemy za zgłoszenie” pojawia się **wyłącznie** po odpowiedzi 200,
-czyli po faktycznym zapisaniu zgłoszenia. Przy błędzie użytkownik dostaje
-numer telefonu i adres e-mail.
+`POST /api/booking` waliduje dane, zapisuje kopię do `.data/zgloszenia.jsonl`
+(jeśli katalog jest zapisywalny) i wysyła zgłoszenie mailem przez Resend.
+Ekran „Dziękujemy za zgłoszenie” pojawia się **wyłącznie** po odpowiedzi 200.
+Przy błędzie użytkownik dostaje numer telefonu i adres e-mail.
 
-Na hostingu serverless (np. Vercel) zapis do pliku jest ulotny — przed
-publikacją należy uzupełnić zmienne `RESEND_API_KEY`, `BOOKING_TO_EMAIL`
-i `BOOKING_FROM_EMAIL`, żeby zgłoszenia trafiały na skrzynkę szkoły.
+W produkcji odpowiedź 200 oznacza, że Resend przyjął wiadomość — plik nie
+wystarcza, bo na hostingu serverless (np. Vercel) jest ulotny. Dlatego przed
+publikacją trzeba ustawić `RESEND_API_KEY`, `BOOKING_TO_EMAIL`
+i `BOOKING_FROM_EMAIL`; bez nich formularz zwraca błąd. Lokalnie
+(`npm run dev`) wystarcza zapis do pliku.
 
 ## Do potwierdzenia przez szkołę przed publikacją
 

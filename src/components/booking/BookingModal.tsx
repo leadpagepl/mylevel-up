@@ -494,6 +494,7 @@ export function BookingModal() {
                   <textarea
                     id="message"
                     rows={3}
+                    maxLength={2000}
                     className={`${inputCls} resize-none`}
                     value={form.message}
                     onChange={(e) => set("message", e.target.value)}
