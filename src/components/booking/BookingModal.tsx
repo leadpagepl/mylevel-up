@@ -13,6 +13,11 @@ import {
   labelOf,
   type Option,
 } from "./options";
+import { Turnstile, type TurnstileHandle } from "./Turnstile";
+
+// Site key Turnstile jest publiczny; secret zna tylko serwer.
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+const TURNSTILE_ERROR = "Nie udało się potwierdzić formularza. Spróbuj ponownie.";
 
 type Form = {
   goal: string;
@@ -129,6 +134,10 @@ export function BookingModal() {
   const [form, setForm] = useState<Form>(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<Status>("idle");
+  // Token Turnstile tylko w pamięci — jednorazowy, nie trafia do URL ani storage.
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileDown, setTurnstileDown] = useState(false);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -145,6 +154,8 @@ export function BookingModal() {
     });
   }, []);
 
+  const onTurnstileUnavailable = useCallback(() => setTurnstileDown(true), []);
+
   /* ---- otwarcie: prefill, blokada scrolla, focus ---- */
   useEffect(() => {
     if (!open) return;
@@ -152,6 +163,8 @@ export function BookingModal() {
     setStep(1);
     setStatus("idle");
     setErrors({});
+    setTurnstileToken(null);
+    setTurnstileDown(false);
     setForm({
       ...EMPTY,
       goal: prefill.goal ?? "",
@@ -270,6 +283,19 @@ export function BookingModal() {
     setErrors(e);
     if (Object.keys(e).length) return;
 
+    // Bez tokenu Turnstile nie wysyłamy. Gdy widget w ogóle nie działa
+    // (zablokowany skrypt, zła konfiguracja) — pokazujemy telefon i e-mail.
+    if (!turnstileToken) {
+      if (!TURNSTILE_SITE_KEY || turnstileDown) setStatus("error");
+      else setErrors({ turnstile: TURNSTILE_ERROR });
+      return;
+    }
+    // Token jest jednorazowy: zużywamy go przy tej próbie, a po każdym
+    // niepowodzeniu prosimy widget o nowy.
+    const token = turnstileToken;
+    setTurnstileToken(null);
+    const retryTurnstile = () => turnstileRef.current?.reset();
+
     setStatus("sending");
     try {
       const res = await fetch("/api/booking", {
@@ -286,9 +312,11 @@ export function BookingModal() {
           lessonType: form.lessonType,
           level: form.level,
           time: form.time,
+          turnstileToken: token,
         }),
       });
       if (!res.ok) {
+        retryTurnstile();
         const data = await res.json().catch(() => ({}));
         if (data?.errors) {
           const serverErrors = data.errors as Record<string, string>;
@@ -309,6 +337,7 @@ export function BookingModal() {
       }
       setStatus("done");
     } catch {
+      retryTurnstile();
       setStatus("error");
     }
   };
@@ -544,6 +573,18 @@ export function BookingModal() {
                 </label>
                 {errors.consent ? (
                   <p className="text-signal text-[12.5px]">{errors.consent}</p>
+                ) : null}
+
+                {TURNSTILE_SITE_KEY ? (
+                  <Turnstile
+                    ref={turnstileRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onToken={setTurnstileToken}
+                    onUnavailable={onTurnstileUnavailable}
+                  />
+                ) : null}
+                {errors.turnstile ? (
+                  <p className="text-signal text-[12.5px]">{errors.turnstile}</p>
                 ) : null}
 
                 {status === "error" ? (
