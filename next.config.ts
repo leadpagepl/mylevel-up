@@ -7,15 +7,18 @@ const isDev = process.env.NODE_ENV !== "production";
  * 'unsafe-inline' w script-src jest potrzebne dla skryptów inline Next.js
  * i skryptu intro w <head>; CSP z nonce wymaga dynamicznego renderowania
  * (osobny etap). 'unsafe-eval' i websockety HMR tylko w `next dev`.
+ * Cloudflare Turnstile wymaga tylko script-src i frame-src dla swojego originu.
  */
+const TURNSTILE = "https://challenges.cloudflare.com";
+
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' ${TURNSTILE}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
   `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
-  "frame-src https://www.google.com",
+  `frame-src https://www.google.com ${TURNSTILE}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

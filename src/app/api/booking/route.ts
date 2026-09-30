@@ -18,6 +18,13 @@ const MAX_BODY_BYTES = 16 * 1024;
 /** Apps Script bywa wolny przy zimnym starcie — dłużej nie trzymamy użytkownika. */
 const GOOGLE_TIMEOUT_MS = 10_000;
 const RESEND_TIMEOUT_MS = 6_000;
+const TURNSTILE_TIMEOUT_MS = 5_000;
+
+const SITEVERIFY_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+/** Maksymalna długość tokenu wg dokumentacji Cloudflare. */
+const TURNSTILE_TOKEN_MAX = 2048;
+const TURNSTILE_ERROR = "Nie udało się potwierdzić formularza. Spróbuj ponownie.";
 
 const LIMITS = { name: 120, phone: 30, email: 254, message: 2000 } as const;
 
@@ -123,6 +130,88 @@ type LeadSubmission = {
   message: string;
   submittedAt: string;
 };
+
+type TurnstileResult = "passed" | "rejected" | "not-configured";
+
+/** Kody błędów Cloudflare do logów — tylko proste identyfikatory, nic więcej. */
+const safeCodes = (v: unknown) =>
+  (Array.isArray(v) &&
+    v
+      .filter((c): c is string => typeof c === "string" && /^[a-z0-9-]{1,40}$/.test(c))
+      .slice(0, 5)
+      .join(",")) ||
+  "brak kodów";
+
+/**
+ * Weryfikacja Cloudflare Turnstile po stronie serwera (Siteverify), zanim
+ * cokolwiek trafi do Google czy Resend. Fail closed: przechodzi wyłącznie
+ * odpowiedź-obiekt z success === true i hostname z allowlisty. Odpowiedź
+ * Cloudflare jest niezaufana — nie trafia do klienta ani w całości do logów.
+ */
+async function verifyTurnstile(token: unknown): Promise<TurnstileResult> {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  // Dokładne hostname'y (bez wildcardów) — zmiana domeny to tylko zmiana env.
+  const allowedHosts = (process.env.TURNSTILE_ALLOWED_HOSTNAMES ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  if (!secret || !allowedHosts.length) {
+    console.error(
+      "[booking] brak TURNSTILE_SECRET_KEY lub TURNSTILE_ALLOWED_HOSTNAMES",
+    );
+    return "not-configured";
+  }
+  if (typeof token !== "string" || !token || token.length > TURNSTILE_TOKEN_MAX) {
+    console.info("[booking] Turnstile: brak lub niepoprawny token");
+    return "rejected";
+  }
+
+  try {
+    const res = await fetch(SITEVERIFY_URL, {
+      method: "POST",
+      body: new URLSearchParams({ secret, response: token }),
+      signal: AbortSignal.timeout(TURNSTILE_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.error(`[booking] Turnstile: Siteverify odpowiedział HTTP ${res.status}`);
+      return "rejected";
+    }
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch (err) {
+      // Timeout w trakcie czytania body też tu trafia.
+      const name = err instanceof Error ? err.name : "błąd";
+      console.error(`[booking] Turnstile: niepoprawny JSON z Siteverify (${name})`);
+      return "rejected";
+    }
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      console.error("[booking] Turnstile: odpowiedź Siteverify nie jest obiektem");
+      return "rejected";
+    }
+    const result = data as Record<string, unknown>;
+    if (result.success !== true) {
+      console.info(
+        `[booking] Turnstile odrzucił token (${safeCodes(result["error-codes"])})`,
+      );
+      return "rejected";
+    }
+    const host =
+      typeof result.hostname === "string" ? result.hostname.toLowerCase() : "";
+    if (!allowedHosts.includes(host)) {
+      const shown = /^[a-z0-9.-]{1,253}$/.test(host) ? host : "?";
+      console.error(`[booking] Turnstile: hostname spoza allowlisty (${shown})`);
+      return "rejected";
+    }
+    return "passed";
+  } catch (err) {
+    console.error(
+      `[booking] Turnstile: brak odpowiedzi Siteverify (${err instanceof Error ? err.name : "błąd"})`,
+    );
+    return "rejected";
+  }
+}
 
 type GoogleResult = "saved" | "failed" | "not-configured";
 
@@ -234,6 +323,9 @@ async function sendLeadNotification(lead: LeadSubmission): Promise<void> {
 const invalid = (status: number) =>
   NextResponse.json({ ok: false, error: "Nieprawidłowe dane." }, { status });
 
+const unavailable = () =>
+  NextResponse.json({ ok: false, error: "unavailable" }, { status: 503 });
+
 export async function POST(request: Request) {
   // Tylko JSON: wymusza preflight CORS, więc obca strona nie wyśle
   // zgłoszenia z przeglądarki odwiedzającego zwykłym <form>.
@@ -256,6 +348,18 @@ export async function POST(request: Request) {
   if (line(input.website)) {
     console.info("[booking] zgłoszenie odrzucone (honeypot)");
     return NextResponse.json({ ok: true });
+  }
+
+  // Turnstile przed walidacją pól i przed Google/Resend — bez potwierdzonego
+  // tokenu zgłoszenie nie idzie dalej (fail closed). Brak konfiguracji to
+  // awaria po naszej stronie, więc klient dostaje ten sam błąd co przy Google.
+  const turnstile = await verifyTurnstile(input.turnstileToken);
+  if (turnstile === "not-configured") return unavailable();
+  if (turnstile !== "passed") {
+    return NextResponse.json(
+      { ok: false, errors: { turnstile: TURNSTILE_ERROR } },
+      { status: 403 },
+    );
   }
 
   const goal = choice(input.goal, GOALS);
@@ -318,10 +422,7 @@ export async function POST(request: Request) {
   const channels = `google: ${google}, plik: ${saved ? "tak" : "nie"}`;
   if (!delivered) {
     console.error(`[booking] zgłoszenie NIE zostało dostarczone (${channels})`);
-    return NextResponse.json(
-      { ok: false, error: "unavailable" },
-      { status: 503 },
-    );
+    return unavailable();
   }
 
   console.info(`[booking] zgłoszenie przyjęte (${channels})`);

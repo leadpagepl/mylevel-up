@@ -23,9 +23,21 @@ npm run build   # build produkcyjny
 ## Formularz zgłoszeniowy
 
 ```
-formularz → POST /api/booking (Next.js) → Google Apps Script → Google Sheets
-                                                        └→ (opcjonalnie) e-mail przez Resend
+formularz + token Cloudflare Turnstile
+  → POST /api/booking (Next.js): Siteverify → walidacja danych
+  → Google Apps Script → Google Sheets
+                       └→ (opcjonalnie) e-mail przez Resend
 ```
+
+**Cloudflare Turnstile** chroni formularz przed botami (obok honeypota).
+Serwer weryfikuje token w Cloudflare Siteverify, zanim cokolwiek trafi do
+Google czy Resend, i odrzuca zgłoszenie przy każdym wyniku innym niż
+potwierdzony sukces z hostname z allowlisty (fail closed, timeout 5 s).
+Token jest jednorazowy: po każdej nieudanej próbie widget pobiera nowy.
+Konfiguracja: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (publiczny, wbudowywany przy
+buildzie), `TURNSTILE_SECRET_KEY` i `TURNSTILE_ALLOWED_HOSTNAMES` (tylko
+serwer). Widget działa wyłącznie na hostname'ach dodanych w panelu Cloudflare
+— lokalnie używamy kluczy testowych Cloudflare.
 
 `POST /api/booking` waliduje i normalizuje dane, a potem wysyła zgłoszenie
 (po stronie serwera, razem ze wspólnym sekretem) do Google Apps Script Web App,
