@@ -46,8 +46,19 @@ ani sekretu.
 
 Ekran „Dziękujemy za zgłoszenie” pojawia się **wyłącznie** wtedy, gdy Apps
 Script potwierdzi zapis odpowiedzią JSON `{ "ok": true }` — sama odpowiedź
-HTTP 200 nie wystarcza. Przy błędzie, przekroczeniu czasu (10 s) albo braku
+HTTP 200 nie wystarcza. Przy błędzie, przekroczeniu czasu (20 s) albo braku
 konfiguracji użytkownik dostaje numer telefonu i adres e-mail szkoły.
+
+**Idempotencja (`submissionId`).** Formularz przy otwarciu losuje UUID v4
+i wysyła ten sam identyfikator przy każdym ponowieniu tego samego zgłoszenia
+(błąd, timeout, nowy token Turnstile, powrót do kroku 1). Nowy identyfikator
+powstaje dopiero przy kolejnym otwarciu formularza. API odrzuca zgłoszenie
+bez poprawnego UUID v4. Apps Script — w jednej sekcji chronionej Script
+Lockiem — sprawdza kolumnę **Submission ID** (K) i dopisuje wiersz tylko
+wtedy, gdy takiego identyfikatora jeszcze nie ma; w przeciwnym razie zwraca
+`{ "ok": true, "duplicate": true }`. Duplikat to dla użytkownika zwykły
+sukces. Dzięki temu ponowienie po timeoucie (Apps Script zapisał wiersz, ale
+odpowiedź nie zdążyła wrócić) nie tworzy drugiego wiersza.
 
 Przed publikacją trzeba ustawić `GOOGLE_LEADS_WEBHOOK_URL`
 i `GOOGLE_LEADS_WEBHOOK_SECRET` (patrz `.env.example`); bez nich formularz
@@ -59,7 +70,9 @@ potwierdzonym zapisie w Google Sheets, już po odpowiedzi dla użytkownika.
 Google Sheets pozostaje jedynym źródłem prawdy: awaria, timeout (6 s) albo
 brak konfiguracji Resend nie powoduje utraty zgłoszenia i nie zmienia ekranu
 sukcesu. Mail ma wersję HTML w stylistyce strony (wszystkie dane z formularza
-są escapowane) oraz wersję tekstową. Konfiguracja: `RESEND_API_KEY`,
+są escapowane) oraz wersję tekstową. Wysyłka używa nagłówka `Idempotency-Key`
+opartego na `submissionId`, więc ponowione zgłoszenie nie wysyła drugiego
+maila (okno Resend: 24 h). Konfiguracja: `RESEND_API_KEY`,
 `BOOKING_NOTIFY_EMAIL`, `BOOKING_FROM_EMAIL` (patrz `.env.example`).
 
 ## Do potwierdzenia przez szkołę przed publikacją
