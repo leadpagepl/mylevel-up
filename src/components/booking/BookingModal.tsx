@@ -19,6 +19,17 @@ import { Turnstile, type TurnstileHandle } from "./Turnstile";
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 const TURNSTILE_ERROR = "Nie udało się potwierdzić formularza. Spróbuj ponownie.";
 
+/** UUID v4 zgłoszenia — z crypto, nigdy z Math.random(). */
+function newSubmissionId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // Starsze przeglądarki (np. Safari < 15.4) nie mają randomUUID.
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; // wersja 4
+  b[8] = (b[8] & 0x3f) | 0x80; // wariant RFC 4122
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 type Form = {
   goal: string;
   lessonType: string;
@@ -138,6 +149,10 @@ export function BookingModal() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileDown, setTurnstileDown] = useState(false);
   const turnstileRef = useRef<TurnstileHandle>(null);
+  // Jeden identyfikator na jedno logiczne zgłoszenie: nadawany przy otwarciu
+  // formularza i ten sam przy każdym ponowieniu (błąd, timeout, nowy token
+  // Turnstile, powrót do kroku 1). Tylko w pamięci — bez storage i URL.
+  const submissionId = useRef("");
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -165,6 +180,7 @@ export function BookingModal() {
     setErrors({});
     setTurnstileToken(null);
     setTurnstileDown(false);
+    submissionId.current = newSubmissionId();
     setForm({
       ...EMPTY,
       goal: prefill.goal ?? "",
@@ -312,6 +328,7 @@ export function BookingModal() {
           lessonType: form.lessonType,
           level: form.level,
           time: form.time,
+          submissionId: submissionId.current,
           turnstileToken: token,
         }),
       });

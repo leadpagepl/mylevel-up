@@ -15,8 +15,12 @@ export const dynamic = "force-dynamic";
 
 /** Zgłoszenie to kilkaset bajtów — większe body odrzucamy przed parsowaniem. */
 const MAX_BODY_BYTES = 16 * 1024;
-/** Apps Script bywa wolny przy zimnym starcie — dłużej nie trzymamy użytkownika. */
-const GOOGLE_TIMEOUT_MS = 10_000;
+/**
+ * Apps Script przy zimnym starcie potrafi odpowiadać ponad 10 s, choć wiersz
+ * już zapisał. 20 s zmniejsza liczbę takich przypadków, a resztę zamyka
+ * deduplikacja po submissionId (ponowienie nie tworzy drugiego wiersza).
+ */
+const GOOGLE_TIMEOUT_MS = 20_000;
 const RESEND_TIMEOUT_MS = 6_000;
 const TURNSTILE_TIMEOUT_MS = 5_000;
 
@@ -27,6 +31,10 @@ const TURNSTILE_TOKEN_MAX = 2048;
 const TURNSTILE_ERROR = "Nie udało się potwierdzić formularza. Spróbuj ponownie.";
 
 const LIMITS = { name: 120, phone: 30, email: 254, message: 2000 } as const;
+
+// Ścisły UUID v4 (wersja 4, wariant RFC 4122) — identyfikator zgłoszenia.
+const UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Znaki sterujące C0/C1, separatory wierszy Unicode i znaki zmiany kierunku tekstu.
 const CONTROL_RE =
@@ -120,6 +128,8 @@ async function persist(entry: string): Promise<boolean> {
 }
 
 type LeadSubmission = {
+  /** Stały dla jednego logicznego zgłoszenia — klucz deduplikacji w arkuszu. */
+  submissionId: string;
   name: string;
   phone: string;
   email: string;
@@ -213,13 +223,15 @@ async function verifyTurnstile(token: unknown): Promise<TurnstileResult> {
   }
 }
 
-type GoogleResult = "saved" | "failed" | "not-configured";
+type GoogleResult = "saved" | "duplicate" | "failed" | "not-configured";
 
 /**
  * Zapis leada w Google Sheets przez Apps Script Web App.
  * Sukces tylko gdy HTTP jest OK i odpowiedź to JSON z `ok: true` — Apps Script
- * potrafi zwrócić 200 ze stroną błędu w HTML. URL, sekret i treść odpowiedzi
- * Google nie trafiają ani do logów, ani do klienta.
+ * potrafi zwrócić 200 ze stroną błędu w HTML. `duplicate: true` oznacza, że
+ * wiersz z tym submissionId już istnieje (np. po ponowieniu po timeoucie) —
+ * to też sukces. URL, sekret i treść odpowiedzi Google nie trafiają ani do
+ * logów, ani do klienta.
  */
 async function saveLeadToGoogle(lead: LeadSubmission): Promise<GoogleResult> {
   const url = process.env.GOOGLE_LEADS_WEBHOOK_URL;
@@ -259,11 +271,23 @@ async function saveLeadToGoogle(lead: LeadSubmission): Promise<GoogleResult> {
       console.error(`[booking] Apps Script zwrócił niepoprawny JSON (${name})`);
       return "failed";
     }
-    if ((result as { ok?: unknown } | null)?.ok !== true) {
+    // Odpowiedź Apps Script jest niezaufana: obiekt, ok === true jako boolean.
+    if (typeof result !== "object" || result === null || Array.isArray(result)) {
+      console.error("[booking] odpowiedź Apps Script nie jest obiektem");
+      return "failed";
+    }
+    const { ok, duplicate } = result as Record<string, unknown>;
+    if (ok !== true) {
       console.error("[booking] Apps Script nie potwierdził zapisu (ok !== true)");
       return "failed";
     }
-    return "saved";
+    // Brak pola = starsza wersja skryptu (sam { ok: true }) — traktujemy jak
+    // nowy zapis. Jeśli pole jest, musi być booleanem.
+    if (duplicate !== undefined && typeof duplicate !== "boolean") {
+      console.error("[booking] Apps Script zwrócił niepoprawne pole duplicate");
+      return "failed";
+    }
+    return duplicate ? "duplicate" : "saved";
   } catch (err) {
     console.error(
       `[booking] brak odpowiedzi z Apps Script (${err instanceof Error ? err.name : "błąd"})`,
@@ -276,6 +300,8 @@ async function saveLeadToGoogle(lead: LeadSubmission): Promise<GoogleResult> {
  * Opcjonalne powiadomienie e-mail przez Resend — tylko informacja dla szkoły.
  * Wywoływane wyłącznie po zapisie w Google i nigdy nie zmienia odpowiedzi
  * formularza. HTML (z escapowanymi danymi) + tekst, temat bez danych użytkownika.
+ * Idempotency-Key (oficjalny mechanizm Resend, 24 h) oparty na submissionId:
+ * ponowienie tego samego zgłoszenia nie wysyła drugiego maila.
  */
 async function sendLeadNotification(lead: LeadSubmission): Promise<void> {
   const key = process.env.RESEND_API_KEY;
@@ -294,6 +320,7 @@ async function sendLeadNotification(lead: LeadSubmission): Promise<void> {
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": `booking-notification/${lead.submissionId}`,
       },
       body: JSON.stringify({
         from,
@@ -308,6 +335,10 @@ async function sendLeadNotification(lead: LeadSubmission): Promise<void> {
     });
     // 2xx = Resend przyjął wiadomość; treść odpowiedzi nie jest potrzebna.
     if (res.ok) console.info("[booking] email notification sent");
+    // 409 = ten klucz idempotency był już użyty (lub jest w toku) — mail dla
+    // tego zgłoszenia wyszedł przy wcześniejszej próbie.
+    else if (res.status === 409)
+      console.info("[booking] email notification already handled (idempotent)");
     else console.error(`[booking] email notification failed (status: ${res.status})`);
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") {
@@ -350,6 +381,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  // Identyfikator zgłoszenia generuje formularz (stały przy ponowieniach).
+  // Bez poprawnego UUID v4 nie ma deduplikacji, więc nic nie idzie dalej.
+  // Małe litery — żeby wielkość liter nie tworzyła „innego” zgłoszenia.
+  if (typeof input.submissionId !== "string" || !UUID_V4_RE.test(input.submissionId)) {
+    return invalid(400);
+  }
+  const submissionId = input.submissionId.toLowerCase();
+
   // Turnstile przed walidacją pól i przed Google/Resend — bez potwierdzonego
   // tokenu zgłoszenie nie idzie dalej (fail closed). Brak konfiguracji to
   // awaria po naszej stronie, więc klient dostaje ten sam błąd co przy Google.
@@ -368,6 +407,7 @@ export async function POST(request: Request) {
   const time = choice(input.time, TIMES);
 
   const lead: LeadSubmission = {
+    submissionId,
     name: line(input.name),
     phone: line(input.phone),
     email: line(input.email),
@@ -416,7 +456,8 @@ export async function POST(request: Request) {
     google === "not-configured" &&
     process.env.NODE_ENV !== "production" &&
     (await persist(JSON.stringify(lead)));
-  const delivered = google === "saved" || saved;
+  const inGoogle = google === "saved" || google === "duplicate";
+  const delivered = inGoogle || saved;
 
   // Logi bez danych osobowych — tylko stan kanałów dostarczenia.
   const channels = `google: ${google}, plik: ${saved ? "tak" : "nie"}`;
@@ -428,6 +469,11 @@ export async function POST(request: Request) {
   console.info(`[booking] zgłoszenie przyjęte (${channels})`);
   // Powiadomienie dopiero po zapisie w Google i już po wysłaniu odpowiedzi —
   // jego wynik (także timeout) nie opóźnia ani nie zmienia sukcesu formularza.
-  if (google === "saved") after(() => sendLeadNotification(lead));
-  return NextResponse.json({ ok: true });
+  // Także przy duplikacie: pierwsza próba mogła zapisać wiersz, ale nie dojść
+  // do wysyłki; przed drugim mailem chroni Idempotency-Key.
+  if (inGoogle) after(() => sendLeadNotification(lead));
+  // Duplikat to dla użytkownika zwykły sukces — zgłoszenie jest w arkuszu.
+  return NextResponse.json(
+    google === "duplicate" ? { ok: true, duplicate: true } : { ok: true },
+  );
 }
