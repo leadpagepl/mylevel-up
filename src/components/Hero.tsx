@@ -168,7 +168,9 @@ export function Hero() {
             alt={HERO_ALT}
             fill
             priority
-            quality={80}
+            // Ta sama jakość co w kadrze desktopowym: identyczny srcset, więc
+            // przeglądarka pobiera zdjęcie hero raz, a nie dwa razy.
+            quality={85}
             sizes="100vw"
             className="object-cover object-[58%_62%]"
           />

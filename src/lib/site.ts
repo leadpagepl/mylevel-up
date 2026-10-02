@@ -41,7 +41,9 @@ export const site = {
   mapEmbed:
     "https://www.google.com/maps?q=Poleska%2074B%2C%2042-218%20Cz%C4%99stochowa&hl=pl&z=16&output=embed",
   siteUrl: "https://mylevelup.pl",
-  author: { name: "LeadPage", url: "https://leadpage.pl" },
+  /** Zdjęcie do podglądu linku (Open Graph), 1200×630 — kadr ze zdjęcia hero. */
+  ogImage: "/img/og-level-up.jpg",
+  author: { name: "Leadpage", url: "https://leadpage.pl" },
 } as const;
 
 /**

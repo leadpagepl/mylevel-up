@@ -40,7 +40,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
     formats: ["image/avif", "image/webp"],
-    qualities: [75, 92],
+    qualities: [75, 85, 92],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

@@ -226,6 +226,8 @@ export function FinalCta() {
                 <PinIcon />
               </span>
               <address className="text-[14.5px] leading-snug text-white/85 not-italic">
+                {/* nazwa + adres + telefon (wyżej) w zwykłym HTML — spójny NAP */}
+                <span className="block font-semibold text-white">{site.name}</span>
                 {address.street}
                 <br className="sm:hidden" />
                 <span className="hidden sm:inline">, </span>
