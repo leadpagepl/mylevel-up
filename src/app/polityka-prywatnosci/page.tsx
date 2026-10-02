@@ -3,12 +3,30 @@ import Image from "next/image";
 import Link from "next/link";
 import { site } from "@/lib/site";
 
+const TITLE = "Polityka prywatności";
+const DESCRIPTION =
+  "Jak Level Up Szkoła Językowa przetwarza dane z formularza zgłoszeniowego na stronie.";
+
 export const metadata: Metadata = {
-  title: "Polityka prywatności",
-  description:
-    "Jak Level Up Szkoła Językowa przetwarza dane z formularza zgłoszeniowego na stronie.",
+  title: TITLE,
+  description: DESCRIPTION,
+  // Dokument pomocniczy — nie ma go w sitemap i nie trafia do indeksu.
   robots: { index: false, follow: true },
   alternates: { canonical: "/polityka-prywatnosci" },
+  // Własny Open Graph, żeby udostępniony link nie przedstawiał się jak strona główna.
+  openGraph: {
+    type: "website",
+    locale: "pl_PL",
+    url: "/polityka-prywatnosci",
+    siteName: site.name,
+    title: `${TITLE} | ${site.name}`,
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary",
+    title: `${TITLE} | ${site.name}`,
+    description: DESCRIPTION,
+  },
 };
 
 const H2 = ({ children }: { children: React.ReactNode }) => (
@@ -19,6 +37,16 @@ const H2 = ({ children }: { children: React.ReactNode }) => (
 
 const P = ({ children }: { children: React.ReactNode }) => (
   <p className="t-body text-ink/70 mt-4 max-w-[70ch] text-[15.5px]">{children}</p>
+);
+
+const UL = ({ children }: { children: React.ReactNode }) => (
+  <ul className="t-body text-ink/70 mt-4 max-w-[70ch] list-disc space-y-2 pl-5 text-[15.5px]">
+    {children}
+  </ul>
+);
+
+const Strong = ({ children }: { children: React.ReactNode }) => (
+  <strong className="text-ink font-semibold">{children}</strong>
 );
 
 export default function PrivacyPage() {
@@ -70,8 +98,10 @@ export default function PrivacyPage() {
           Formularz „Umów pierwszą lekcję” zbiera: imię, numer telefonu, adres
           e-mail, opcjonalną wiadomość oraz wybrane przez Ciebie odpowiedzi
           dotyczące celu nauki, rodzaju zajęć, poziomu i preferowanej pory dnia.
-          Nie zbieramy żadnych innych danych, nie prosimy o dane płatnicze ani o
-          numer PESEL.
+          Do zgłoszenia dodajemy datę oraz losowy identyfikator techniczny.
+          Służy on wyłącznie temu, żeby ponowne wysłanie tego samego
+          formularza nie utworzyło duplikatu zgłoszenia. W formularzu nie
+          prosimy o żadne inne dane — ani o dane płatnicze, ani o numer PESEL.
         </P>
 
         <H2>Po co ich używamy</H2>
@@ -80,6 +110,12 @@ export default function PrivacyPage() {
           szczegóły zajęć. Podstawą przetwarzania jest Twoja zgoda (art. 6 ust. 1
           lit. a RODO) oraz podjęcie działań przed zawarciem umowy na Twoje
           żądanie (art. 6 ust. 1 lit. b RODO).
+        </P>
+        <P>
+          Dane techniczne potrzebne do ochrony formularza przed spamem
+          i nadużyciami (opisane niżej) przetwarzamy na podstawie prawnie
+          uzasadnionego interesu, jakim jest bezpieczeństwo strony (art. 6
+          ust. 1 lit. f RODO).
         </P>
 
         <H2>Jak długo je przechowujemy</H2>
@@ -92,10 +128,52 @@ export default function PrivacyPage() {
 
         <H2>Komu przekazujemy dane</H2>
         <P>
-          Dane ze zgłoszenia trafiają na serwer, na którym działa ta strona.
-          Jeśli włączona jest wysyłka powiadomień, trafiają też na skrzynkę
-          e-mail szkoły przez dostawcę usługi wysyłki wiadomości. Nie sprzedajemy i
-          nie udostępniamy danych w celach marketingowych.
+          Nie sprzedajemy danych i nie udostępniamy ich w celach
+          marketingowych. Przy prowadzeniu strony i obsłudze zgłoszeń
+          korzystamy z usług następujących dostawców:
+        </P>
+        <UL>
+          <li>
+            <Strong>Łukasz Czuber, działający pod marką Leadpage</Strong> —
+            wykonanie i techniczne utrzymanie strony, formularza oraz
+            związanych z nim integracji (w tym arkusza Google i Google Apps
+            Script), a także diagnostyka i bezpieczeństwo. W związku z tym
+            może mieć techniczny dostęp do danych przekazywanych przez
+            formularz — wyłącznie w zakresie niezbędnym do świadczenia tych
+            usług na rzecz szkoły, która pozostaje administratorem danych.
+          </li>
+          <li>
+            <Strong>Vercel</Strong> — hosting strony i jej części serwerowej.
+            Każde zgłoszenie przechodzi przez serwery Vercel, które — jak
+            każdy hosting — przetwarzają też dane techniczne połączenia
+            (m.in. adres IP), również w ramach zabezpieczeń chroniących stronę
+            i formularz przed spamem i nadużyciami.
+          </li>
+          <li>
+            <Strong>Google</Strong> — zgłoszenia są zapisywane w arkuszu
+            Google (Google Sheets) za pośrednictwem Google Apps Script. Arkusz
+            jest technicznie utrzymywany przez Leadpage w ramach obsługi
+            strony, a szkoła ma do niego dostęp. Od Google pochodzi też mapa
+            osadzona w sekcji kontaktowej (opisana niżej).
+          </li>
+          <li>
+            <Strong>Resend</Strong> — wysyłka powiadomień e-mail. Na skrzynkę
+            e-mail szkoły trafia powiadomienie o nowym zgłoszeniu wraz z jego
+            treścią.
+          </li>
+          <li>
+            <Strong>Cloudflare</Strong> — usługa Turnstile, która chroni
+            formularz przed botami i nadużyciami. Gdy przechodzisz do
+            drugiego kroku formularza, Twoja przeglądarka łączy się
+            z serwerami Cloudflare, które w tym celu przetwarzają dane
+            techniczne (m.in. adres IP i informacje o przeglądarce).
+          </li>
+        </UL>
+        <P>
+          Część tych dostawców działa także poza Europejskim Obszarem
+          Gospodarczym, m.in. w Stanach Zjednoczonych, dlatego dane mogą być
+          przetwarzane również poza EOG — na zasadach opisanych
+          w dokumentach i politykach prywatności tych dostawców.
         </P>
 
         <H2>Twoje prawa</H2>
@@ -112,7 +190,15 @@ export default function PrivacyPage() {
           Ta strona nie używa własnych plików cookie do śledzenia ani narzędzi
           analitycznych. Nie osadzamy skryptów reklamowych. Kroje pisma są
           serwowane z własnego serwera strony, więc otwarcie strony nie wysyła
-          Twoich danych do zewnętrznych dostawców czcionek.
+          Twoich danych do zewnętrznych dostawców czcionek. W pamięci
+          przeglądarki zapisujemy jedynie informację, że animacja powitalna
+          została już odtworzona — znika ona po zamknięciu karty.
+        </P>
+        <P>
+          Zabezpieczenie formularza (Cloudflare Turnstile) wczytuje się
+          dopiero po przejściu do drugiego kroku formularza. Dane techniczne,
+          które wtedy trafiają do Cloudflare, są przetwarzane zgodnie
+          z polityką prywatności Cloudflare.
         </P>
         <P>
           W sekcji kontaktowej osadzona jest mapa Google. Gdy mapa się
@@ -129,7 +215,7 @@ export default function PrivacyPage() {
         <P>
           Jeżeli w przyszłości dodamy narzędzia analityczne lub inne usługi
           zewnętrzne, ten dokument zostanie zaktualizowany przed ich
-          uruchomieniem.
+          uruchomieniem. Ostatnia aktualizacja: październik 2026.
         </P>
 
         <div className="border-ink/12 mt-16 border-t pt-8">

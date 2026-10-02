@@ -133,8 +133,10 @@ export function About() {
             data-about="intro"
             className="t-body text-ink/70 mt-4 max-w-[46ch] text-[16px] md:text-[17.5px]"
           >
-            Na zajęciach stawiamy na jasne wyjaśnienia, praktyczne ćwiczenia
-            i swobodną rozmowę.
+            Level Up to szkoła językowa z Częstochowy, w której{" "}
+            {site.teacherFirstName} prowadzi lekcje angielskiego online:
+            indywidualnie i w mini-grupach. Na zajęciach stawiamy na jasne
+            wyjaśnienia, praktyczne ćwiczenia i swobodną rozmowę.
           </p>
 
           <div

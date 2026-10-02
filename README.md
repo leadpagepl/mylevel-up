@@ -75,6 +75,26 @@ opartego na `submissionId`, więc ponowione zgłoszenie nie wysyła drugiego
 maila (okno Resend: 24 h). Konfiguracja: `RESEND_API_KEY`,
 `BOOKING_NOTIFY_EMAIL`, `BOOKING_FROM_EMAIL` (patrz `.env.example`).
 
+## SEO i indeksowanie
+
+- Domena pochodzi wyłącznie z `site.siteUrl` (`src/lib/site.ts`): canonical,
+  Open Graph, `sitemap.xml`, `robots.txt` i dane strukturalne.
+- `src/app/sitemap.ts` → `/sitemap.xml`. Zawiera tylko stronę główną; polityka
+  prywatności ma `noindex`, więc jej tam nie ma. Datę `HOME_LAST_MODIFIED`
+  zmieniamy ręcznie przy istotnej zmianie treści.
+- `src/app/robots.ts` → `/robots.txt`: wszystko dostępne poza `/api/`,
+  ze wskazaniem sitemap.
+- Podgląd linku: `public/img/og-level-up.jpg` (1200×630, kadr zdjęcia hero).
+  Ikony: `src/app/icon.png` i `src/app/apple-icon.png` (kwadratowe).
+- Dane strukturalne (`src/app/page.tsx`): `WebSite`, `EducationalOrganization`
+  i `FAQPage`. Bez `aggregateRating`, dopóki `googleRating.confirmed` jest
+  `false`.
+- Po podpięciu domeny: weryfikacja w Google Search Console (najlepiej przez
+  DNS — bez zmian w kodzie), wysłanie `sitemap.xml`, jedno przekierowanie
+  `www` ↔ domena główna oraz `mylevel-up.vercel.app` → domena docelowa,
+  dodanie nowego hostname w Cloudflare Turnstile i w
+  `TURNSTILE_ALLOWED_HOSTNAMES`.
+
 ## Do potwierdzenia przez szkołę przed publikacją
 
 1. **Ceny** (90 / 70 / 50 zł) i „materiały w cenie” — z grafiki `ang1.png`.

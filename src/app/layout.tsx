@@ -15,17 +15,31 @@ const sourceSerif = Source_Serif_4({
   style: ["normal", "italic"],
   variable: "--font-source-serif",
   display: "swap",
+  // Krój cytatów — pojawia się dopiero poniżej pierwszego ekranu, więc nie
+  // konkuruje o łącze ze zdjęciem hero (LCP).
+  preload: false,
 });
+
+const OG_TITLE = "Zacznij mówić po angielsku | Level Up";
+const OG_DESCRIPTION =
+  "Lekcje angielskiego online dopasowane do Twojego poziomu. Indywidualnie lub w małej grupie. Matura, egzamin ósmoklasisty, FCE, CAE, Business English.";
+const OG_IMAGE = {
+  url: site.ogImage,
+  width: 1200,
+  height: 630,
+  alt: "Biurko do nauki angielskiego: książki, notatnik i laptop. Level Up Szkoła Językowa",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.siteUrl),
   title: {
-    default:
-      "Angielski online | Level Up Szkoła Językowa Częstochowa, Marek Pydziński",
+    // Do ok. 60 znaków — dłuższy tytuł wyszukiwarki ucinają.
+    default: "Angielski online | Level Up Szkoła Językowa Częstochowa",
     template: "%s | Level Up Szkoła Językowa",
   },
+  // Do ok. 160 znaków; nazwa szkoły i miasto na początku, żeby nie zostały ucięte.
   description:
-    "Angielski online z Markiem: lekcje indywidualne i mini-grupy, od A1 do C2. Przygotowanie do matury, egzaminu ósmoklasisty, FCE i CAE oraz Business English. Szkoła językowa Level Up z Częstochowy.",
+    "Level Up Szkoła Językowa z Częstochowy: angielski online indywidualnie i w mini-grupach, od A1 do C2. Matura, egzamin ósmoklasisty, FCE, CAE, Business English.",
   keywords: [
     "angielski online",
     "szkoła językowa Częstochowa",
@@ -43,15 +57,19 @@ export const metadata: Metadata = {
     locale: "pl_PL",
     url: site.siteUrl,
     siteName: site.name,
-    title: "Zacznij mówić po angielsku | Level Up",
-    description:
-      "Lekcje angielskiego online dopasowane do Twojego poziomu. Indywidualnie lub w małej grupie. Matura, egzamin ósmoklasisty, FCE, CAE, Business English.",
+    title: OG_TITLE,
+    description: OG_DESCRIPTION,
+    images: [OG_IMAGE],
   },
-  robots: { index: true, follow: true },
-  icons: {
-    icon: [{ url: "/img/mark-level-up.png", type: "image/png" }],
-    apple: [{ url: "/img/mark-level-up.png" }],
+  twitter: {
+    card: "summary_large_image",
+    title: OG_TITLE,
+    description: OG_DESCRIPTION,
+    images: [OG_IMAGE],
   },
+  // max-image-preview: zgoda na duży podgląd zdjęcia w wynikach wyszukiwania.
+  robots: { index: true, follow: true, "max-image-preview": "large" },
+  // Ikony: src/app/icon.png i apple-icon.png (kwadratowe — konwencja plików Next.js).
 };
 
 export const viewport: Viewport = {
